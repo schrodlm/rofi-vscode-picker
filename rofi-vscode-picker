@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""Pick a recent VS Code project via rofi and open it.
+
+Reads recent workspaces from VS Code's SQLite state DB, shows them in
+rofi (-dmenu), and launches `code` on the selection.
+"""
+
+import json
+import shutil
+import sqlite3
+import subprocess
+import sys
+from pathlib import Path
+from urllib.parse import unquote, urlparse
+
+STATE_DB = Path.home() / ".config/Code/User/globalStorage/state.vscdb"
+ROFI_CMD = ["rofi", "-dmenu", "-i", "-p", "VS Code project"]
+CODE_CMD = ["code"]
+
+
+def load_recent_folders() -> list[Path]:
+    """Return recent project folders, most-recent first, deduped, existing only."""
+    if not STATE_DB.exists():
+        sys.exit(f"VS Code state DB not found at {STATE_DB}")
+
+    conn = sqlite3.connect(STATE_DB)
+    row = conn.execute(
+        "SELECT value FROM ItemTable WHERE key='history.recentlyOpenedPathsList'"
+    ).fetchone()
+    conn.close()
+    if not row:
+        return []
+
+    entries = json.loads(row[0]).get("entries", [])
+    folders = []
+    seen = set()
+    for entry in entries:
+        uri = entry.get("folderUri")
+        # Skip non-folder entries (individual files) and non-local URIs
+        # those need different handling (maybe a TODO)
+        if not uri or not uri.startswith("file://"):
+            continue
+        path = Path(unquote(urlparse(uri).path))
+        if path in seen or not path.is_dir():
+            continue
+        seen.add(path)
+        folders.append(path)
+    return folders
+
+
+def pick(folders: list[Path]) -> Path | None:
+    """Pipe folders through rofi; return the selected path, or None on cancel."""
+    home = Path.home()
+    # Display paths relative to ~ where possible, but keep a mapping so we
+    # return the absolute path the user selected.
+    display = []
+    for f in folders:
+        try:
+            display.append("~/" + str(f.relative_to(home)))
+        except ValueError:
+            display.append(str(f))
+
+    proc = subprocess.run(
+        ROFI_CMD,
+        input="\n".join(display),
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return None
+    choice = proc.stdout.strip()
+    return folders[display.index(choice)] if choice in display else None
+
+
+def main() -> int:
+    if not shutil.which(ROFI_CMD[0]):
+        sys.exit(f"{ROFI_CMD[0]} not found on PATH")
+    if not shutil.which(CODE_CMD[0]):
+        sys.exit(f"{CODE_CMD[0]} not found on PATH")
+
+    folders = load_recent_folders()
+    if not folders:
+        sys.exit("No recent VS Code folders found.")
+
+    chosen = pick(folders)
+    if chosen is None:
+        return 0
+    subprocess.Popen([*CODE_CMD, str(chosen)], start_new_session=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
