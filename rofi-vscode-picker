@@ -13,21 +13,30 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-STATE_DB = Path.home() / ".config/Code/User/globalStorage/state.vscdb"
+# VS Code 1.13x+ moved application storage (incl. recents) to a shared DB and
+# keeps the old per-install globalStorage DB only as a fallback.
+STATE_DBS = [
+    Path.home() / ".vscode-shared/sharedStorage/state.vscdb",
+    Path.home() / ".config/Code/User/globalStorage/state.vscdb",
+]
+RECENTS_KEY = "history.recentlyOpenedPathsList"
 ROFI_CMD = ["rofi", "-dmenu", "-i", "-p", "VS Code project"]
 CODE_CMD = ["code"]
 
 
 def load_recent_folders() -> list[Path]:
     """Return recent project folders, most-recent first, deduped, existing only."""
-    if not STATE_DB.exists():
-        sys.exit(f"VS Code state DB not found at {STATE_DB}")
-
-    conn = sqlite3.connect(STATE_DB)
-    row = conn.execute(
-        "SELECT value FROM ItemTable WHERE key='history.recentlyOpenedPathsList'"
-    ).fetchone()
-    conn.close()
+    row = None
+    for db in STATE_DBS:
+        if not db.exists():
+            continue
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        row = conn.execute(
+            "SELECT value FROM ItemTable WHERE key=?", (RECENTS_KEY,)
+        ).fetchone()
+        conn.close()
+        if row:
+            break
     if not row:
         return []
 

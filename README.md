@@ -2,7 +2,7 @@
 
 Pick a recent VS Code project via rofi and open it.
 
-Reads the recent-workspaces list from VS Code's SQLite state DB (`~/.config/Code/User/globalStorage/state.vscdb`), shows them in the most recent order with `rofi -dmenu`, and opens the chosen folder with `code`.
+Reads the recent-workspaces list from VS Code's SQLite state DB (`~/.vscode-shared/sharedStorage/state.vscdb` on newer VS Code, falling back to `~/.config/Code/User/globalStorage/state.vscdb`), shows them in the most recent order with `rofi -dmenu`, and opens the chosen folder with `code`.
 
 ## Why
 I find it very useful to be able to quickly jump to any project/worktree without having to look for anything other than the project's name.
